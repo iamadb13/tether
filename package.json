@@ -1,0 +1,35 @@
+{
+  "name": "tether",
+  "version": "0.1.0",
+  "description": "Tether — a bidirectional Workfront <-> Jira sync service that converges under partial failure",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "demo": "tsx src/cli/demo.ts",
+    "start": "tsx src/cli/start.ts",
+    "drift": "tsx src/cli/drift.ts",
+    "bench": "tsx src/cli/bench.ts",
+    "replay": "tsx src/cli/replay.ts",
+    "preflight": "tsx src/cli/preflight.ts",
+    "jira:cleanup": "tsx src/cli/jira-cleanup.ts",
+    "test": "vitest run",
+    "test:contract:real": "JIRA_CONTRACT=real vitest run test/contract",
+    "test:sim": "SIM_SEEDS=200 vitest run test/convergence.sim.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "^5.2.1",
+    "pino": "^9.14.0",
+    "prom-client": "^15.1.3",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
