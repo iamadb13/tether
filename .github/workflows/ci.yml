@@ -1,0 +1,20 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Chaos simulation (200 seeds)
+        run: npm run test:sim
+      - name: Render a chaos replay
+        if: always()
+        run: npm run replay -- --seed 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: chaos-replay, path: replays/ }
