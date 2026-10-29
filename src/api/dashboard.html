@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tether · Ops</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #14171f; --muted: #5d6576; --line: #e3e6ec;
+    --ok: #1a7f4b; --ok-bg: #e5f5ec; --warn: #9a5b00; --warn-bg: #fff3dc; --bad: #b42318; --bad-bg: #fdebea;
+    --info: #2f5bd3; --info-bg: #e8eefc; --wf: #e2542b; --jira: #2f6fed; --chip: #eef0f4;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1116; --panel: #171a21; --ink: #e8eaf0; --muted: #9aa3b5; --line: #2a2f3a;
+      --ok: #4cc38a; --ok-bg: #12291f; --warn: #f0b44c; --warn-bg: #2d2412; --bad: #ff7b72; --bad-bg: #2f1715;
+      --info: #7aa2ff; --info-bg: #172240; --wf: #ff875f; --jira: #7aa2ff; --chip: #232833;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; flex-wrap: wrap; }
+  .brand { font-weight: 700; font-size: 18px; letter-spacing: -0.02em; }
+  .brand small { font-weight: 500; color: var(--muted); margin-left: 8px; font-size: 13px; }
+  .wf { color: var(--wf); } .jira { color: var(--jira); }
+  .spacer { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--chip); font-size: 12px; font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+  .dot.open { background: var(--bad); } .dot.half_open { background: var(--warn); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; padding: 16px 24px 40px; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  .kpis { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .kpi .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .kpi .l { color: var(--muted); font-size: 12px; }
+  .kpi.bad .v { color: var(--bad); } .kpi.warn .v { color: var(--warn); } .kpi.ok .v { color: var(--ok); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  section > h2 { margin: 0; padding: 10px 14px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+  section > h2 .count { background: var(--chip); color: var(--ink); border-radius: 999px; padding: 0 8px; font-size: 12px; }
+  .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px 0; align-items: center; }
+  .controls .label { color: var(--muted); font-size: 12px; width: 48px; }
+  button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.active { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  button.primary { background: var(--info); border-color: var(--info); color: #fff; }
+  button.danger { color: var(--bad); }
+  button.danger.active { background: var(--bad); border-color: var(--bad); color: #fff; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; background: var(--bg); white-space: nowrap; }
+  .sep { border-left: 1px solid var(--line); }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .muted { color: var(--muted); }
+  .title { font-weight: 600; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .diff { background: var(--warn-bg); color: var(--warn); border-radius: 4px; padding: 0 4px; }
+  .conflictcell { background: var(--bad-bg); color: var(--bad); border-radius: 4px; padding: 0 4px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .b-ok { background: var(--ok-bg); color: var(--ok); } .b-warn { background: var(--warn-bg); color: var(--warn); }
+  .b-bad { background: var(--bad-bg); color: var(--bad); } .b-info { background: var(--info-bg); color: var(--info); }
+  .b-mute { background: var(--chip); color: var(--muted); }
+  .st { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--chip); white-space: nowrap; }
+  .card { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .card:last-child { border-bottom: 0; }
+  .card .row { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; }
+  .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .vs div { background: var(--bg); border-radius: 6px; padding: 6px 8px; word-break: break-word; }
+  .vs b { display: block; font-size: 11px; font-weight: 600; }
+  .feed { max-height: 460px; overflow: auto; }
+  .feed .card { padding: 7px 14px; font-size: 12.5px; }
+  .empty { padding: 18px 14px; color: var(--muted); }
+  .chaosstats { padding: 12px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; }
+  .chaosstats div { background: var(--bg); padding: 8px 10px; border-radius: 6px; }
+  pre { margin: 0 14px 14px; padding: 12px; background: var(--bg); border-radius: 6px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; max-height: 300px; overflow: auto; }
+  .tablewrap { overflow-x: auto; }
+  .pill.real { background: var(--jira); color: #fff; }
+  a.key { color: inherit; text-decoration: underline dotted; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Tether <small><span class="wf">Workfront</span> ⇄ <span class="jira">Jira</span> · ops console</small></div>
+  <div class="spacer"></div>
+  <span class="pill" id="mode" hidden></span>
+  <span class="pill"><span class="dot" id="br-wf"></span>Workfront API</span>
+  <span class="pill"><span class="dot" id="br-jira"></span>Jira API</span>
+  <span class="pill" id="reconciled">reconciler: –</span>
+</header>
+
+<main>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="stack">
+    <section id="demo-panel" hidden>
+      <h2>Demo controls <span class="muted" style="text-transform:none;letter-spacing:0">— play the vendors and the users</span></h2>
+      <div class="controls">
+        <span class="label">Chaos</span>
+        <button data-preset="calm" class="active">Calm</button>
+        <button data-preset="flaky">Flaky APIs</button>
+        <button data-preset="webhooks">Lossy webhooks</button>
+        <button data-preset="apocalypse">Apocalypse</button>
+        <button data-outage="jira" class="danger">Jira outage</button>
+      </div>
+      <div class="controls">
+        <span class="label">Users</span>
+        <button data-act="task">+ Workfront request</button>
+        <button data-act="edits">5 random edits</button>
+        <button data-act="conflict">Due-date conflict</button>
+      </div>
+      <div class="controls">
+        <span class="label">Ops</span>
+        <button data-act="reconcile">Full reconcile</button>
+        <button data-act="drift" class="primary">Drift report (dry run)</button>
+      </div>
+      <div class="chaosstats" id="chaosstats"></div>
+      <pre id="drift" hidden></pre>
+    </section>
+
+    <section>
+      <h2>Linked work items <span class="count" id="pairs-count">0</span></h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr>
+            <th><span class="wf">Workfront</span> task</th><th>Status</th><th>Due</th><th>Prio</th><th>Assignee</th>
+            <th class="sep">Sync</th>
+            <th class="sep"><span class="jira">Jira</span> issue</th><th>Status</th><th>Due</th><th>Prio</th><th>Assignee</th>
+          </tr></thead>
+          <tbody id="pairs"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section><h2>Conflict inbox <span class="count" id="c-count">0</span></h2><div id="conflicts"></div></section>
+    <section><h2>Dead letters <span class="count" id="d-count">0</span></h2><div id="dead"></div></section>
+    <section><h2>Activity (audit log)</h2><div class="feed" id="feed"></div></section>
+  </div>
+</main>
+
+<script>
+const token = new URLSearchParams(location.search).get('token') || 'admin';
+const H = { authorization: 'Bearer ' + token, 'content-type': 'application/json' };
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? '—').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const ago = (t) => { if (!t) return 'never'; const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? s + 's ago' : Math.round(s / 60) + 'm ago'; };
+const person = (e) => (e ? esc(String(e).split('@')[0]) : '—');
+const STATUS = { todo: 'To do', in_progress: 'In progress', in_review: 'In review', done: 'Done' };
+const FIELDS = ['title', 'description', 'status', 'dueDate', 'priority', 'assigneeEmail'];
+let lastOutage = false;
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: H, ...opts });
+  if (!r.ok) throw new Error(path + ' → ' + r.status);
+  return r.json();
+}
+
+const kpi = (label, value, cls = '') => `<div class="kpi ${cls}"><div class="v">${value}</div><div class="l">${label}</div></div>`;
+const sum = (rows, f) => rows.filter(f).reduce((a, r) => a + r.value, 0);
+
+function cell(v, other, conflicted, fmt = esc) {
+  const txt = fmt(v);
+  if (conflicted) return `<span class="conflictcell">${txt}</span>`;
+  return v !== other ? `<span class="diff">${txt}</span>` : txt;
+}
+
+async function refresh() {
+  let s, w = null;
+  try { s = await api('/admin/state'); } catch { $('kpis').innerHTML = kpi('admin API', 'unreachable', 'bad'); return; }
+  try { w = await api('/demo/world'); } catch { /* production: no demo routes */ }
+  $('demo-panel').hidden = !w;
+  $('mode').hidden = !w;
+  if (w) {
+    $('mode').className = 'pill' + (w.mode === 'real' ? ' real' : '');
+    $('mode').innerHTML = w.mode === 'real' ? `REAL Jira · <a style="color:inherit" target="_blank" href="${esc(w.jiraUrl)}">${esc(new URL(w.jiraUrl).host)}</a>` : 'mock vendors';
+  }
+  const jiraLink = (k) => (w?.jiraUrl && k ? `<a class="key" target="_blank" href="${esc(w.jiraUrl)}/browse/${esc(k)}">${esc(k)}</a>` : esc(k));
+
+  $('br-wf').className = 'dot ' + s.breakers.workfront;
+  $('br-jira').className = 'dot ' + s.breakers.jira;
+  $('reconciled').textContent = 'reconciler: ' + ago(s.lastReconcileAt);
+
+  const active = s.links.filter((l) => l.state === 'active');
+  const conflictsBy = new Set(s.conflicts.map((c) => c.wfId + '/' + c.field));
+  const queued = new Set(s.jobs.map((j) => j.entity.slice(3)));
+  const wfById = new Map((w?.workfront ?? []).map((t) => [t.id, t]));
+  const jiraByKey = new Map((w?.jira ?? []).map((i) => [i.key, i]));
+  let inSync = 0;
+
+  $('pairs').innerHTML = s.links.map((l) => {
+    const a = wfById.get(l.wfId)?.item, b = l.jiraKey ? jiraByKey.get(l.jiraKey)?.item : null;
+    const conf = (f) => conflictsBy.has(l.wfId + '/' + f);
+    const anyConf = FIELDS.some(conf);
+    const same = a && b && !a.error && !b.error && FIELDS.every((f) => a[f] === b[f]);
+    let badge;
+    if (l.state === 'tombstoned') badge = `<span class="badge b-mute" title="${esc(l.tombstoneReason)}">unlinked</span>`;
+    else if (l.state === 'creating') badge = '<span class="badge b-info">creating…</span>';
+    else if (anyConf) badge = '<span class="badge b-bad">needs decision</span>';
+    else if (queued.has(l.wfId)) badge = '<span class="badge b-info">syncing…</span>';
+    else if (w && !same) badge = '<span class="badge b-warn">drift</span>';
+    else { badge = '<span class="badge b-ok">in sync</span>'; inSync++; }
+    if (!w) return `<tr><td class="mono">${esc(l.wfId)}<div class="title">${esc(l.target?.title)}</div></td><td colspan="4"></td><td class="sep">${badge}</td><td class="sep mono">${esc(l.jiraKey)}</td><td colspan="4"></td></tr>`;
+    const A = a && !a.error ? a : {}, B = b && !b.error ? b : {};
+    const st = (v) => `<span class="st">${esc(STATUS[v] ?? v)}</span>`;
+    return `<tr>
+      <td><div class="mono muted">${esc(l.wfId)}</div><div class="title" title="${esc(A.title)}">${cell(A.title, B.title, conf('title'))}</div></td>
+      <td>${cell(A.status, B.status, conf('status'), st)}</td>
+      <td class="mono">${cell(A.dueDate, B.dueDate, conf('dueDate'))}</td>
+      <td>${cell(A.priority, B.priority, conf('priority'))}</td>
+      <td>${cell(A.assigneeEmail, B.assigneeEmail, conf('assigneeEmail'), person)}</td>
+      <td class="sep">${badge}</td>
+      <td class="sep"><div class="mono muted">${jiraLink(l.jiraKey)}</div><div class="title" title="${esc(B.title)}">${cell(B.title, A.title, conf('title'))}</div></td>
+      <td>${cell(B.status, A.status, conf('status'), st)}</td>
+      <td class="mono">${cell(B.dueDate, A.dueDate, conf('dueDate'))}</td>
+      <td>${cell(B.priority, A.priority, conf('priority'))}</td>
+      <td>${cell(B.assigneeEmail, A.assigneeEmail, conf('assigneeEmail'), person)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="11" class="empty">No linked items yet.</td></tr>';
+  $('pairs-count').textContent = s.links.length;
+
+  const lag = s.queue.oldestAgeMs / 1000;
+  $('kpis').innerHTML = [
+    kpi('linked items', active.length),
+    w ? kpi('in sync right now', `${inSync}/${active.length}`, inSync === active.length ? 'ok' : 'warn') : '',
+    kpi('sync lag (oldest job)', lag < 1 ? '0s' : lag.toFixed(lag < 10 ? 1 : 0) + 's', lag > 30 ? 'bad' : lag > 5 ? 'warn' : 'ok'),
+    kpi('queue depth', s.queue.depth, s.queue.depth > 20 ? 'warn' : ''),
+    kpi('open conflicts', s.conflicts.length, s.conflicts.length ? 'bad' : 'ok'),
+    kpi('dead letters', s.queue.dead, s.queue.dead ? 'bad' : 'ok'),
+    kpi('duplicate webhooks dropped', sum(s.webhooks, (r) => r.result === 'duplicate')),
+    kpi('reconciler repairs', s.reconcilerRepairs, s.reconcilerRepairs ? 'warn' : ''),
+    kpi('no-op syncs (echoes)', sum(s.syncRuns, (r) => r.outcome === 'noop')),
+    kpi('retries + deferrals', sum(s.jobAttempts, (r) => r.result === 'retry' || r.result === 'deferred')),
+  ].join('');
+
+  $('c-count').textContent = s.conflicts.length;
+  $('conflicts').innerHTML = s.conflicts.map((c) => `
+    <div class="card">
+      <div class="row"><b>${esc(c.field)}</b><span class="mono muted">${esc(c.wfId)} · ${esc(c.jiraKey)}</span></div>
+      <div class="muted" style="font-size:12px">${c.reason === 'unmapped_user' ? 'Assignee has no account in the other system' : 'Changed differently on both sides'}${c.status === 'resolving' ? ' · applying…' : ''}</div>
+      <div class="vs"><div><b class="wf">Workfront</b>${esc(c.wfValue)}</div><div><b class="jira">Jira</b>${esc(c.jiraValue)}</div></div>
+      ${c.status === 'open' && c.reason !== 'unmapped_user' ? `<button data-resolve="${c.id}" data-choose="workfront">Keep Workfront</button> <button data-resolve="${c.id}" data-choose="jira">Keep Jira</button>` : ''}
+      ${c.status === 'open' && c.reason === 'unmapped_user' ? '<span class="muted" style="font-size:12px">Create the user or reassign — re-checked automatically on the next change.</span>' : ''}
+    </div>`).join('') || '<div class="empty">Nothing needs a human.</div>';
+
+  $('d-count').textContent = s.deadLetters.length;
+  $('dead').innerHTML = s.deadLetters.map((d) => `
+    <div class="card"><div class="row"><b class="mono">${esc(d.entity)}</b><button data-replay="${d.id}">Replay</button></div>
+    <div class="mono muted" style="font-size:11px;margin-top:4px">${esc(d.error)}</div></div>`).join('') || '<div class="empty">Empty.</div>';
+
+  $('feed').innerHTML = s.audit.map((a) => `
+    <div class="card"><span class="muted mono">${new Date(a.at).toLocaleTimeString()}</span>
+    ${a.target === 'link'
+      ? `<b>${esc(a.wf_id)}</b> ${esc(a.cause)}${a.after ? ' → ' + esc(a.after) : ''}`
+      : `<b class="${a.target === 'jira' ? 'jira' : 'wf'}">${a.target === 'jira' ? esc(a.jira_key) : esc(a.wf_id)}</b>.${esc(a.field)}: ${esc(JSON.stringify(a.before))} → ${esc(JSON.stringify(a.after))} <span class="muted">(${esc(a.cause)})</span>`}</div>`).join('') || '<div class="empty">No changes yet.</div>';
+
+  if (w) {
+    const c = w.chaos;
+    const fmt = (x, name, cls) => {
+      const calls = w.apiCalls[cls === 'jira' ? 'jira' : 'workfront'];
+      const where = w.mode === 'real' && cls === 'jira' ? ' <span class="muted">· injected client-side</span>' : '';
+      return `<div><b class="${cls}">${name}</b>${calls ? ` <span class="muted">· API calls r${calls.reads}/w${calls.writes}</span>` : ''}${where}<br>
+      5xx ${x.stats.errors} · 429 ${x.stats.rateLimited} · lost responses ${x.stats.lostResponses} · outage ${x.stats.outage}<br>
+      ${x.webhooks ? `webhooks dropped ${x.stats.webhooksDropped} · duplicated ${x.stats.webhooksDuplicated} · abandoned ${x.webhooks.abandoned}` : 'changes arrive by polling (no webhooks to localhost)'}</div>`;
+    };
+    $('chaosstats').innerHTML = fmt(c.workfront, 'Workfront', 'wf') + fmt(c.jira, 'Jira', 'jira');
+    lastOutage = c.jira.config.outage;
+    document.querySelector('[data-outage]').classList.toggle('active', lastOutage);
+  }
+}
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  try {
+    if (b.dataset.preset) {
+      await api('/demo/chaos', { method: 'POST', body: JSON.stringify({ preset: b.dataset.preset }) });
+      document.querySelectorAll('[data-preset]').forEach((x) => x.classList.toggle('active', x === b));
+    }
+    if (b.dataset.outage) await api('/demo/chaos', { method: 'POST', body: JSON.stringify({ target: 'jira', patch: { outage: !lastOutage } }) });
+    if (b.dataset.resolve) await api(`/admin/conflicts/${b.dataset.resolve}/resolve`, { method: 'POST', body: JSON.stringify({ choose: b.dataset.choose, by: 'dashboard' }) });
+    if (b.dataset.replay) await api(`/admin/dead-letters/${b.dataset.replay}/replay`, { method: 'POST', body: '{}' });
+    const act = b.dataset.act;
+    if (act === 'task') await api('/demo/task', { method: 'POST', body: '{}' });
+    if (act === 'edits') await api('/demo/edits', { method: 'POST', body: JSON.stringify({ count: 5 }) });
+    if (act === 'conflict') await api('/demo/conflict', { method: 'POST', body: '{}' });
+    if (act === 'reconcile') await api('/admin/reconcile', { method: 'POST', body: '{}' });
+    if (act === 'drift') {
+      const r = await api('/admin/drift');
+      $('drift').hidden = false;
+      $('drift').textContent = r.drifted === 0 ? `Checked ${r.checked} linked items: no drift.` : JSON.stringify(r, null, 2);
+    }
+  } catch (err) { console.error(err); }
+  refresh();
+});
+
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>
