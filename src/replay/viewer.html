@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tether · Chaos replay</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #fff; --ink: #151821; --muted: #626b7d; --line: #e2e5eb; --chip: #eef0f4;
+    --ok: #18794e; --ok-bg: #e3f4ea; --warn: #9a5b00; --warn-bg: #fff2d6; --bad: #c4291d; --bad-bg: #fdeceb;
+    --wf: #e2542b; --jira: #2f6fed; --tether: #6e56cf; --lost: #8e4ec6; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1015; --panel: #161920; --ink: #e9ebf1; --muted: #9ba3b4; --line: #282d38; --chip: #222733;
+      --ok: #4cc38a; --ok-bg: #11281d; --warn: #f0b44c; --warn-bg: #2b2311; --bad: #ff7b72; --bad-bg: #2e1614;
+      --wf: #ff875f; --jira: #7aa2ff; --tether: #a594f9; --lost: #c39bf2;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+  header { padding: 16px 24px 12px; background: var(--panel); border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { margin: 0; font-size: 19px; letter-spacing: -0.02em; }
+  h1 small { color: var(--muted); font-weight: 500; font-size: 13px; margin-left: 6px; }
+  .verdict { font-weight: 700; padding: 4px 12px; border-radius: 999px; font-size: 13px; }
+  .verdict.ok { background: var(--ok-bg); color: var(--ok); } .verdict.bad { background: var(--bad-bg); color: var(--bad); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--chip); border-radius: 6px; padding: 2px 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .chip b { font-weight: 700; }
+  .wf { color: var(--wf); } .jira { color: var(--jira); } .tether { color: var(--tether); }
+  .bar { position: sticky; top: 0; z-index: 3; background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 24px 6px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  button { font: inherit; font-size: 13px; padding: 5px 11px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  button.play { min-width: 84px; font-weight: 700; background: var(--tether); border-color: var(--tether); color: #fff; }
+  label { font-size: 12px; color: var(--muted); display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+  .pos { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .phase { font-weight: 600; font-size: 13px; }
+  canvas { display: block; width: 100%; height: 214px; cursor: crosshair; border-radius: 8px; background: var(--bg); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 16px; padding: 16px 24px 40px; }
+  @media (max-width: 1150px) { main { grid-template-columns: 1fr; padding: 16px; } .bar, header { padding-left: 16px; padding-right: 16px; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-width: 0; }
+  section h2 { margin: 0; padding: 9px 14px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
+  .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .kpi .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .kpi .l { font-size: 11.5px; color: var(--muted); }
+  .kpi.bad .v { color: var(--bad); } .kpi.ok .v { color: var(--ok); } .kpi.warn .v { color: var(--warn); }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 9px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: 0; }
+  th { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); background: var(--bg); font-weight: 600; }
+  .sep { border-left: 1px solid var(--line); }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .muted { color: var(--muted); }
+  .title { max-width: 190px; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: bottom; }
+  .diff { background: var(--warn-bg); color: var(--warn); border-radius: 4px; padding: 0 4px; }
+  .conf { background: var(--bad-bg); color: var(--bad); border-radius: 4px; padding: 0 4px; }
+  .flash { animation: flash 0.9s ease-out; border-radius: 4px; }
+  @keyframes flash { from { box-shadow: 0 0 0 3px var(--tether); } to { box-shadow: 0 0 0 0 transparent; } }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .b-ok { background: var(--ok-bg); color: var(--ok); } .b-warn { background: var(--warn-bg); color: var(--warn); } .b-bad { background: var(--bad-bg); color: var(--bad); }
+  .log { max-height: 560px; overflow: hidden; }
+  .ev { padding: 6px 14px; border-bottom: 1px solid var(--line); font-size: 12.5px; display: grid; grid-template-columns: 20px 1fr; gap: 6px; }
+  .ev:last-child { border-bottom: 0; }
+  .ev.cur { background: var(--chip); }
+  .ev.dim { color: var(--muted); }
+  .ev .t { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+  .checks .ev { grid-template-columns: 22px 1fr; }
+  .pending { opacity: 0.35; }
+  .toast { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%) scale(0.96); background: var(--panel); border: 2px solid var(--ok); color: var(--ink); padding: 18px 26px; border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.25); font-size: 17px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 9; max-width: 90vw; text-align: center; }
+  .toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .toast.bad { border-color: var(--bad); }
+  .toast small { display: block; font-weight: 500; font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--panel); font-size: 12px; padding: 5px 8px; border-radius: 6px; max-width: 420px; z-index: 8; display: none; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; color: var(--muted); padding: 2px 2px 0; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .policies { padding: 10px 14px; font-size: 12.5px; color: var(--muted); }
+  .policies b { color: var(--ink); font-weight: 600; }
+  .empty { padding: 16px; color: var(--muted); }
+</style>
+</head>
+<body>
+<script type="application/json" id="replay-data">"__REPLAY_DATA__"</script>
+
+<header>
+  <h1>Chaos replay <small id="subtitle"></small></h1>
+  <span class="verdict" id="verdict"></span>
+  <div class="chips" id="chips"></div>
+</header>
+
+<div class="bar">
+  <div class="controls">
+    <button id="restart" title="Restart (Home)">⏮</button>
+    <button id="back" title="Step back (←)">◀</button>
+    <button id="play" class="play" title="Play / pause (Space)">▶ Play</button>
+    <button id="fwd" title="Step forward (→)">▶|</button>
+    <button id="end" title="Jump to end (End)">⏭</button>
+    <span class="muted" style="font-size:12px;margin-left:6px">speed</span>
+    <button data-speed="1">1×</button><button data-speed="4">4×</button><button data-speed="16" class="on">16×</button><button data-speed="64">64×</button>
+    <button id="nextFault" title="Next injected fault (F)">next fault</button>
+    <button id="nextCheck" title="Next invariant check (C)">next check</button>
+    <label><input type="checkbox" id="pauseChecks" checked /> pause at checks</label>
+    <label><input type="checkbox" id="routine" /> show routine events</label>
+    <span class="pos" id="pos"></span>
+  </div>
+  <div class="phase" id="phase"></div>
+  <canvas id="tl"></canvas>
+  <div class="legend">
+    <span><i style="background:var(--bad)"></i>5xx injected</span>
+    <span><i style="background:#e0a100"></i>429 rate limit</span>
+    <span><i style="background:var(--lost)"></i>response lost after commit</span>
+    <span><i style="background:#7d8597"></i>webhook dropped</span>
+    <span><i style="background:#f08c00"></i>webhook duplicated</span>
+    <span><i style="background:#111;outline:1px solid #888"></i>worker crash</span>
+    <span><i style="background:var(--ok)"></i>sync applied</span>
+    <span><i style="background:var(--tether)"></i>compare-and-set abort</span>
+    <span><i style="background:#f76b15"></i>conflict</span>
+    <span><i style="background:var(--warn-bg);outline:1px solid var(--warn)"></i>fields out of sync</span>
+  </div>
+</div>
+
+<main>
+  <div class="stack">
+    <div class="kpis" id="kpis"></div>
+    <section>
+      <h2>Both systems at this moment</h2>
+      <div class="tablewrap"><table>
+        <thead><tr>
+          <th><span class="wf">Workfront</span></th><th>Status</th><th>Due</th><th>Prio</th><th>Assignee</th>
+          <th class="sep">State</th>
+          <th class="sep"><span class="jira">Jira</span></th><th>Status</th><th>Due</th><th>Prio</th><th>Assignee</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+    </section>
+    <section>
+      <h2>Field ownership (when both sides change the same field)</h2>
+      <div class="policies" id="policies"></div>
+    </section>
+  </div>
+  <div class="stack">
+    <section><h2>Invariant checks</h2><div class="checks" id="checks"></div></section>
+    <section><h2>What just happened</h2><div class="log" id="log"></div></section>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+<div class="tip" id="tip"></div>
+
+<script>
+const raw = document.getElementById('replay-data').textContent;
+const D = JSON.parse(raw);
+if (typeof D === 'string') { document.body.innerHTML = '<p style="padding:40px">No replay data. Generate one with <code>npm run replay -- --seed 7 --open</code>.</p>'; throw new Error('no data'); }
+const E = D.events, N = E.length, M = D.meta;
+const FIELDS = ['title', 'description', 'status', 'dueDate', 'priority', 'assigneeEmail'];
+const STATUS = { todo: 'To do', in_progress: 'In progress', in_review: 'In review', done: 'Done' };
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? '—').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const t0 = N ? E[0].t : 0;
+const clockOf = (t) => { const s = Math.round((t - t0) / 1000); return `t+${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+// ---------------------------------------------------------------- classification
+const isFault = (e) => e.k === 'api' && (e.st === 'lost' || e.st === 'net' || e.st === 429 || (typeof e.st === 'number' && e.st >= 500));
+const isRoutine = (e) =>
+  e.k === 'state' || (e.k === 'api' && !isFault(e) && e.m === 'GET') || (e.k === 'api' && !isFault(e) && /search/.test(e.path)) ||
+  (e.k === 'hook' && e.r === 'delivered') || (e.k === 'sync' && (e.out === 'noop' || e.out === 'skipped'));
+const LANES = ['Humans', 'Workfront API', 'Jira API', 'Webhooks', 'Tether', 'Invariants'];
+function lane(e) {
+  if (e.k === 'human' || e.k === 'resolve') return 0;
+  if (e.k === 'api') return e.sys === 'workfront' ? 1 : 2;
+  if (e.k === 'hook') return 3;
+  if (e.k === 'check') return 5;
+  if (e.k === 'sync' || e.k === 'job' || e.k === 'conflict' || e.k === 'note' || e.k === 'crash') return 4;
+  return -1;
+}
+function color(e) {
+  switch (e.k) {
+    case 'api': return e.st === 'lost' ? css('--lost') : e.st === 429 ? '#e0a100' : (e.st === 'net' || e.st >= 500) ? css('--bad') : e.m === 'GET' || /search/.test(e.path) ? '#9aa3b588' : css('--jira');
+    case 'hook': return e.r === 'dropped' || e.r === 'abandoned' ? '#7d8597' : e.r === 'duplicated' ? '#f08c00' : e.r === 'failed' ? css('--bad') : '#9aa3b566';
+    case 'human': return e.side === 'workfront' ? css('--wf') : css('--jira');
+    case 'resolve': return css('--tether');
+    case 'sync': return e.out === 'applied' || e.out === 'created' ? css('--ok') : e.out === 'conflict' ? '#f76b15' : '#9aa3b555';
+    case 'job': return e.r === 'dead' ? css('--bad') : e.r === 'cas' ? css('--tether') : e.r === 'retry' ? '#e0a100' : '#7d8597';
+    case 'conflict': return '#f76b15';
+    case 'note': return css('--tether');
+    case 'crash': return matchMedia('(prefers-color-scheme: dark)').matches ? '#fff' : '#111';
+    case 'check': return e.ok ? css('--ok') : css('--bad');
+  }
+  return '#999';
+}
+const important = (e) => isFault(e) || e.k === 'crash' || (e.k === 'job' && e.r === 'cas') || (e.k === 'human' && e.mid) || e.k === 'check' || e.k === 'conflict' || e.k === 'note' || (e.k === 'hook' && e.r !== 'delivered') || e.k === 'resolve' || (e.k === 'job' && e.r === 'dead');
+
+// ---------------------------------------------------------------- narration
+function describe(e) {
+  const f = (xs) => xs.length ? xs.join(', ') : '';
+  switch (e.k) {
+    case 'phase': return ['▸', `<b>${esc(e.name)}</b>`];
+    case 'human': return e.field === 'created'
+      ? ['👤', `Marketer creates request <b>${esc(e.wfId)}</b> in <span class="wf">Workfront</span>`]
+      : ['👤', `${e.side === 'workfront' ? 'Marketer' : 'Engineer'} edits <b>${esc(e.field)}</b> of ${esc(e.wfId)} in <span class="${e.side === 'workfront' ? 'wf' : 'jira'}">${e.side === 'workfront' ? 'Workfront' : 'Jira'}</span>${e.mid ? ' <b>while Tether is mid-sync on it</b>' : ''}`];
+    case 'api': {
+      const sys = `<span class="${e.sys === 'workfront' ? 'wf' : 'jira'}">${e.sys === 'workfront' ? 'Workfront' : 'Jira'}</span>`;
+      const call = `<span class="mono">${esc(e.m)} ${esc(e.path.length > 34 ? e.path.slice(0, 34) + '…' : e.path)}</span>`;
+      if (e.st === 'lost') return ['🕳', `${sys} ${call} — <b>write applied, response lost</b> (ambiguous)`];
+      if (e.st === 'net') return ['✕', `${sys} ${call} — network error`];
+      if (e.st === 429) return ['⏳', `${sys} ${call} → <b>429</b> rate limited`];
+      if (e.st >= 500) return ['💥', `${sys} ${call} → <b>${e.st}</b> injected fault`];
+      return ['·', `${sys} ${call} → ${e.st}`];
+    }
+    case 'hook': return {
+      dropped: ['🗑', `Webhook from <span class="${e.src === 'workfront' ? 'wf' : 'jira'}">${e.src}</span> <b>dropped</b> — never arrives`],
+      duplicated: ['⧉', `Webhook from <span class="${e.src === 'workfront' ? 'wf' : 'jira'}">${e.src}</span> <b>delivered twice</b>`],
+      failed: ['↻', `Webhook from ${esc(e.src)} failed, vendor will retry`],
+      abandoned: ['🗑', `Webhook from ${esc(e.src)} abandoned after retries`],
+      delivered: ['·', `Webhook from ${esc(e.src)} delivered`],
+    }[e.r] ?? ['·', esc(e.r)];
+    case 'sync':
+      if (e.out === 'created') return ['✚', `<span class="tether">Tether</span> links <b>${esc(e.wfId)}</b> to a new Jira issue${e.toJira.length ? ` and pushes ${f(e.toJira)}` : ''}`];
+      if (e.out === 'applied') return ['⇄', `<span class="tether">Tether</span> syncs <b>${esc(e.wfId)}</b>${e.toJira.length ? ` → <span class="jira">Jira</span>: ${f(e.toJira)}` : ''}${e.toWf.length ? ` → <span class="wf">Workfront</span>: ${f(e.toWf)}` : ''}${e.trig === 'reconcile' ? ' <span class="muted">(found by reconciler)</span>' : ''}`];
+      if (e.out === 'conflict') return ['⚠', `<span class="tether">Tether</span> syncs ${esc(e.wfId)} but parks <b>${f(e.cf)}</b> for a human`];
+      if (e.out === 'noop') return ['·', `${esc(e.wfId)}: nothing to do <span class="muted">(echo / duplicate / already done)</span>`];
+      return ['·', `${esc(e.wfId)}: ${esc(e.out)}`];
+    case 'job': return e.r === 'cas' ? ['🛡', `<b>Compare-and-set</b>: ${esc(e.wfId)} changed under Tether after it read it — write aborted, re-deciding on fresh data`]
+      : e.r === 'retry' ? ['↻', `Retry scheduled for ${esc(e.wfId)} <span class="muted">${esc(e.why.slice(0, 70))}</span>`]
+      : e.r === 'defer' ? ['⏸', `Deferred ${esc(e.wfId)} <span class="muted">${esc(e.why.slice(0, 70))}</span>`]
+      : ['☠', `<b>Dead-lettered</b> ${esc(e.wfId)}: ${esc(e.why)}`];
+    case 'conflict': return ['⚠', `<b>Conflict</b> on ${esc(e.wfId)}.${esc(e.field)}: <span class="wf">${esc(e.wf)}</span> vs <span class="jira">${esc(e.jira)}</span> → inbox`];
+    case 'note': return ['🛡', `${esc(e.wfId)}: ${esc(e.text)}`];
+    case 'crash': return ['⚡', `<b>Worker crashes</b> mid-sync of ${esc(e.wfId)} — its Jira write lands, the response is lost, nothing is recorded`];
+    case 'resolve': return ['🧑‍⚖️', `Human resolves ${esc(e.wfId)}.${esc(e.field)}: keep <b>${esc(e.choose)}</b>`];
+    case 'check': return [e.ok ? '✅' : '❌', `<b>${e.round === 0 ? 'Setup' : 'Round ' + e.round}:</b> ${esc(e.label)}${e.ok ? '' : `<br><span class="muted">${esc(e.details.join('; '))}</span>`}`];
+  }
+  return ['·', esc(e.k)];
+}
+
+// ---------------------------------------------------------------- state reconstruction
+function emptyState() { return { wf: {}, jira: {}, keyOf: {}, conf: {}, changed: {}, phase: '' }; }
+function clone(s) { return { wf: { ...s.wf }, jira: { ...s.jira }, keyOf: { ...s.keyOf }, conf: { ...s.conf }, changed: { ...s.changed }, phase: s.phase }; }
+function apply(s, e) {
+  if (e.k === 'state') {
+    if (e.sys === 'workfront') {
+      const prev = s.wf[e.id];
+      if (e.item) { for (const f of FIELDS) if (!prev || prev[f] !== e.item[f]) s.changed[`wf/${e.id}/${f}`] = e.i; s.wf[e.id] = e.item; } else delete s.wf[e.id];
+    } else {
+      const prev = s.jira[e.id]?.item;
+      if (e.item) { for (const f of FIELDS) if (!prev || prev[f] !== e.item[f]) s.changed[`jira/${e.id}/${f}`] = e.i; s.jira[e.id] = { wfId: e.wfId, item: e.item }; } else delete s.jira[e.id];
+      if (e.wfId) s.keyOf[e.wfId] = e.id;
+    }
+  } else if (e.k === 'conflict') s.conf[`${e.wfId}/${e.field}`] = true;
+  else if (e.k === 'resolve') delete s.conf[`${e.wfId}/${e.field}`];
+  else if (e.k === 'phase') s.phase = e.name;
+}
+function diverged(s) {
+  let n = 0;
+  for (const [wfId, key] of Object.entries(s.keyOf)) {
+    const a = s.wf[wfId], b = s.jira[key]?.item;
+    if (a && b) for (const f of FIELDS) if (a[f] !== b[f]) n++;
+  }
+  return n;
+}
+
+const CP = 200, checkpoints = [], div = new Int16Array(N);
+const C = { faults: 0, drops: 0, dups: 0, crashes: 0, retries: 0, applied: 0, noops: 0, conflicts: 0, edits: 0, lost: 0 };
+const cum = Object.fromEntries(Object.keys(C).map((k) => [k, new Int32Array(N)]));
+{
+  const s = emptyState();
+  for (let i = 0; i < N; i++) {
+    const e = E[i];
+    if (i % CP === 0) checkpoints.push(clone(s));
+    apply(s, e);
+    div[i] = e.k === 'state' || i === 0 ? diverged(s) : div[i - 1];
+    if (isFault(e)) C.faults++;
+    if (e.k === 'api' && e.st === 'lost') C.lost++;
+    if (e.k === 'hook' && (e.r === 'dropped' || e.r === 'abandoned')) C.drops++;
+    if (e.k === 'hook' && e.r === 'duplicated') C.dups++;
+    if (e.k === 'crash') C.crashes++;
+    if (e.k === 'job' && (e.r === 'retry' || e.r === 'defer')) C.retries++;
+    if (e.k === 'sync' && (e.out === 'applied' || e.out === 'created')) C.applied++;
+    if (e.k === 'sync' && e.out === 'noop') C.noops++;
+    if (e.k === 'conflict') C.conflicts++;
+    if (e.k === 'human') C.edits++;
+    for (const k in C) cum[k][i] = C[k];
+  }
+}
+const maxDiv = Math.max(1, ...div);
+function stateAt(i) {
+  const cp = Math.floor(i / CP);
+  const s = clone(checkpoints[cp] ?? emptyState());
+  for (let j = cp * CP; j <= i; j++) apply(s, E[j]);
+  return s;
+}
+
+// ---------------------------------------------------------------- header
+$('subtitle').textContent = `seed ${M.seed} · ${M.shape.initialTasks} tasks · ${M.shape.rounds} rounds · ${N.toLocaleString()} events`;
+$('verdict').className = 'verdict ' + (M.violations.length ? 'bad' : 'ok');
+$('verdict').textContent = M.violations.length ? `✗ ${M.violations.length} invariant violation(s)` : '✓ every invariant held';
+const fw = M.faults.workfront, fj = M.faults.jira;
+$('chips').innerHTML = [
+  ['human edits', C.edits], ['5xx injected', fw.errors + fj.errors], ['429s', fw.rateLimited + fj.rateLimited],
+  ['lost responses', fw.lostResponses + fj.lostResponses], ['webhooks dropped', fw.webhooksDropped + fj.webhooksDropped],
+  ['duplicated', fw.webhooksDuplicated + fj.webhooksDuplicated], ['crashes', M.stats.crashes], ['conflicts → human', M.stats.conflictsResolved],
+].map(([l, v]) => `<span class="chip"><b>${v}</b> ${l}</span>`).join('');
+const P = M.policies;
+const who = { workfront: '<span class="wf">Workfront wins</span>', jira: '<span class="jira">Jira wins</span>', latest: 'latest edit wins', manual: '<b>a human decides</b>' };
+$('policies').innerHTML = Object.entries(P).map(([f, p]) => `<b>${f}</b>: ${who[p]}`).join(' · ') +
+  '<br>Edits to <i>different</i> fields always flow both ways; ownership only matters when the <i>same</i> field changed on both sides.';
+const checkEvents = E.filter((e) => e.k === 'check');
+
+// ---------------------------------------------------------------- timeline canvas
+const cv = $('tl'), ctx = cv.getContext('2d');
+let W = 0, H = 0, dpr = 1, staticLayer = null;
+const TOP = 16, DIVH = 44, LANEH = 23, LEFT = 104;
+function xOf(i) { return LEFT + (N <= 1 ? 0 : (i / (N - 1)) * (W - LEFT - 8)); }
+function iOf(x) { return Math.max(0, Math.min(N - 1, Math.round(((x - LEFT) / (W - LEFT - 8)) * (N - 1)))); }
+function layout() {
+  dpr = window.devicePixelRatio || 1;
+  W = cv.clientWidth; H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  staticLayer = document.createElement('canvas');
+  staticLayer.width = cv.width; staticLayer.height = cv.height;
+  const g = staticLayer.getContext('2d');
+  g.scale(dpr, dpr);
+  const ink = css('--ink'), muted = css('--muted'), line = css('--line');
+  // phase bands
+  const phases = E.filter((e) => e.k === 'phase');
+  phases.forEach((p, n) => {
+    const x0 = xOf(p.i), x1 = n + 1 < phases.length ? xOf(phases[n + 1].i) : W - 8;
+    if (n % 2 === 0) { g.fillStyle = line + '66'; g.fillRect(x0, 0, x1 - x0, H); }
+  });
+  // lanes
+  g.font = '11px system-ui, sans-serif';
+  LANES.forEach((name, l) => {
+    const y = TOP + DIVH + 8 + l * LANEH;
+    g.fillStyle = muted; g.fillText(name, 8, y + 15);
+    g.strokeStyle = line; g.beginPath(); g.moveTo(LEFT, y + LANEH - 0.5); g.lineTo(W - 8, y + LANEH - 0.5); g.stroke();
+  });
+  // divergence area
+  g.fillStyle = muted; g.fillText('out of sync', 8, TOP + 14); g.fillText('(fields)', 8, TOP + 27);
+  const warn = css('--warn');
+  g.beginPath(); g.moveTo(xOf(0), TOP + DIVH);
+  const step = Math.max(1, Math.floor(N / (W * 2)));
+  for (let i = 0; i < N; i += step) { let m = 0; for (let j = i; j < Math.min(N, i + step); j++) m = Math.max(m, div[j]); g.lineTo(xOf(i), TOP + DIVH - (m / maxDiv) * (DIVH - 4)); }
+  g.lineTo(xOf(N - 1), TOP + DIVH); g.closePath();
+  g.fillStyle = css('--warn-bg'); g.fill(); g.strokeStyle = warn; g.lineWidth = 1; g.stroke();
+  // ticks: routine first (faint), important on top (bigger)
+  for (const pass of [0, 1]) {
+    for (const e of E) {
+      const l = lane(e); if (l < 0) continue;
+      const imp = important(e); if (imp !== (pass === 1)) continue;
+      const y = TOP + DIVH + 8 + l * LANEH, x = xOf(e.i);
+      g.fillStyle = color(e);
+      if (e.k === 'check') { g.beginPath(); g.moveTo(x, y + 3); g.lineTo(x + 6, y + 11); g.lineTo(x, y + 19); g.lineTo(x - 6, y + 11); g.closePath(); g.fill(); }
+      else if (e.k === 'crash') { g.fillRect(x - 2, y + 2, 4, LANEH - 5); }
+      else if (imp) g.fillRect(x - 1, y + 3, 3, LANEH - 7);
+      else g.fillRect(x, y + 7, 1, LANEH - 14);
+    }
+  }
+  g.fillStyle = ink;
+}
+function draw(i, hover) {
+  if (!staticLayer) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(staticLayer, 0, 0);
+  ctx.scale(dpr, dpr);
+  // played region dimmer future
+  ctx.fillStyle = css('--bg') + '99';
+  ctx.fillRect(xOf(i) + 1, 0, W - xOf(i), H);
+  const x = xOf(i);
+  ctx.strokeStyle = css('--tether'); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  ctx.fillStyle = css('--tether'); ctx.beginPath(); ctx.arc(x, 6, 5, 0, Math.PI * 2); ctx.fill();
+  if (hover != null) { ctx.strokeStyle = css('--muted'); ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(xOf(hover), 0); ctx.lineTo(xOf(hover), H); ctx.stroke(); ctx.setLineDash([]); }
+}
+
+// ---------------------------------------------------------------- panels
+const STATIC_KPI = (l, v, cls = '') => `<div class="kpi ${cls}"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+let lastRendered = -1;
+function render(i) {
+  if (!N) return;
+  const s = stateAt(i), e = E[i];
+  $('pos').textContent = `event ${(i + 1).toLocaleString()} / ${N.toLocaleString()} · ${clockOf(e.t)} virtual`;
+  $('phase').innerHTML = s.phase ? `▸ ${esc(s.phase)}` : '&nbsp;';
+  const d = div[i];
+  $('kpis').innerHTML = [
+    STATIC_KPI('fields out of sync', d, d ? 'warn' : 'ok'),
+    STATIC_KPI('faults injected', cum.faults[i], cum.faults[i] ? 'bad' : ''),
+    STATIC_KPI('lost responses', cum.lost[i]),
+    STATIC_KPI('webhooks lost', cum.drops[i]),
+    STATIC_KPI('duplicates', cum.dups[i]),
+    STATIC_KPI('crashes', cum.crashes[i]),
+    STATIC_KPI('retries / deferrals', cum.retries[i]),
+    STATIC_KPI('syncs applied', cum.applied[i], 'ok'),
+    STATIC_KPI('no-ops (echoes)', cum.noops[i]),
+  ].join('');
+
+  // tables
+  const ids = Object.keys(s.wf).sort();
+  const recent = (k) => s.changed[k] !== undefined && i - s.changed[k] < 25 && s.changed[k] <= i;
+  $('rows').innerHTML = ids.map((wfId) => {
+    const a = s.wf[wfId], key = s.keyOf[wfId], b = key ? s.jira[key]?.item : null;
+    const cell = (sys, id, v, other, f, fmt = esc) => {
+      const conflicted = s.conf[`${wfId}/${f}`] && v !== other;
+      const cls = [b && v !== other ? (conflicted ? 'conf' : 'diff') : '', recent(`${sys}/${id}/${f}`) ? 'flash' : ''].join(' ').trim();
+      return cls ? `<span class="${cls}">${fmt(v)}</span>` : fmt(v);
+    };
+    const st = (v) => esc(STATUS[v] ?? v);
+    const who = (v) => esc(v ? String(v).split('@')[0] : '—');
+    const nDiff = b ? FIELDS.filter((f) => a[f] !== b[f]).length : 0;
+    const anyConf = FIELDS.some((f) => s.conf[`${wfId}/${f}`] && b && a[f] !== b[f]);
+    const badge = !b ? '<span class="badge b-warn">not linked</span>' : anyConf ? '<span class="badge b-bad">human needed</span>' : nDiff ? `<span class="badge b-warn">${nDiff} drift</span>` : '<span class="badge b-ok">in sync</span>';
+    const B = b ?? {};
+    return `<tr>
+      <td><span class="mono muted">${esc(wfId)}</span> <span class="title">${cell('wf', wfId, a.title, B.title, 'title')}</span></td>
+      <td>${cell('wf', wfId, a.status, B.status, 'status', st)}</td><td class="mono">${cell('wf', wfId, a.dueDate, B.dueDate, 'dueDate')}</td>
+      <td>${cell('wf', wfId, a.priority, B.priority, 'priority')}</td><td>${cell('wf', wfId, a.assigneeEmail, B.assigneeEmail, 'assigneeEmail', who)}</td>
+      <td class="sep">${badge}</td>
+      <td class="sep">${b ? `<span class="mono muted">${esc(key)}</span> <span class="title">${cell('jira', key, b.title, a.title, 'title')}</span>` : '<span class="muted">—</span>'}</td>
+      <td>${b ? cell('jira', key, b.status, a.status, 'status', st) : ''}</td><td class="mono">${b ? cell('jira', key, b.dueDate, a.dueDate, 'dueDate') : ''}</td>
+      <td>${b ? cell('jira', key, b.priority, a.priority, 'priority') : ''}</td><td>${b ? cell('jira', key, b.assigneeEmail, a.assigneeEmail, 'assigneeEmail', who) : ''}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="11" class="empty">Nothing yet — press play.</td></tr>';
+
+  // checks
+  $('checks').innerHTML = checkEvents.map((c) => {
+    const [icon, html] = describe(c);
+    return `<div class="ev ${c.i > i ? 'pending' : ''}"><span>${c.i > i ? '○' : icon}</span><span>${html}</span></div>`;
+  }).join('') || '<div class="empty">No checks.</div>';
+
+  // log
+  const showRoutine = $('routine').checked;
+  const out = [];
+  for (let j = i; j >= 0 && out.length < 18; j--) {
+    const x = E[j];
+    if (x.k === 'state') continue;
+    if (!showRoutine && isRoutine(x)) continue;
+    const [icon, html] = describe(x);
+    out.push(`<div class="ev ${j === i ? 'cur' : ''} ${isRoutine(x) ? 'dim' : ''}"><span>${icon}</span><span>${html} <span class="t">${clockOf(x.t)}</span></span></div>`);
+  }
+  $('log').innerHTML = out.join('') || '<div class="empty">—</div>';
+  lastRendered = i;
+}
+
+// ---------------------------------------------------------------- playback
+let cur = 0, playing = false, speed = 16, acc = 0, lastTs = 0, hover = null, holdUntil = 0;
+const EV_PER_SEC = 20;
+function seek(i, fromPlay = false) {
+  const prev = cur;
+  cur = Math.max(0, Math.min(N - 1, i));
+  if (fromPlay) {
+    for (let j = prev + 1; j <= cur; j++) if (E[j].k === 'check') { cur = j; showToast(E[j]); if ($('pauseChecks').checked) holdUntil = performance.now() + 1800; break; }
+  }
+  draw(cur, hover);
+  render(cur);
+}
+function showToast(e) {
+  const t = $('toast');
+  const [icon, html] = describe(e);
+  t.className = 'toast show' + (e.ok ? '' : ' bad');
+  t.innerHTML = `${icon} ${html}${e.ok ? `<small>${cum.faults[e.i]} faults · ${cum.drops[e.i]} lost webhooks · ${cum.crashes[e.i]} crashes so far — and still identical</small>` : ''}`;
+  clearTimeout(showToast.h);
+  showToast.h = setTimeout(() => (t.className = 'toast'), 1700);
+}
+function tick(ts) {
+  if (playing) {
+    if (ts < holdUntil) { lastTs = ts; requestAnimationFrame(tick); return; }
+    const dt = lastTs ? (ts - lastTs) / 1000 : 0;
+    lastTs = ts;
+    acc += dt * EV_PER_SEC * speed;
+    const n = Math.floor(acc);
+    if (n > 0) { acc -= n; seek(cur + n, true); }
+    if (cur >= N - 1) setPlaying(false);
+  }
+  requestAnimationFrame(tick);
+}
+function setPlaying(p) {
+  playing = p; lastTs = 0; acc = 0;
+  $('play').textContent = p ? '⏸ Pause' : cur >= N - 1 ? '↺ Replay' : '▶ Play';
+}
+$('play').onclick = () => { if (!playing && cur >= N - 1) seek(0); setPlaying(!playing); };
+$('restart').onclick = () => { seek(0); setPlaying(false); };
+$('end').onclick = () => { seek(N - 1); setPlaying(false); };
+$('back').onclick = () => { setPlaying(false); seek(prevVisible(cur)); };
+$('fwd').onclick = () => { setPlaying(false); seek(nextVisible(cur)); };
+$('nextFault').onclick = () => { setPlaying(false); const j = E.findIndex((e) => e.i > cur && (isFault(e) || e.k === 'crash' || (e.k === 'hook' && e.r === 'dropped'))); if (j >= 0) seek(j); };
+$('nextCheck').onclick = () => { setPlaying(false); const j = E.findIndex((e) => e.i > cur && e.k === 'check'); if (j >= 0) { seek(j); showToast(E[j]); } };
+$('routine').onchange = () => render(cur);
+document.querySelectorAll('[data-speed]').forEach((b) => (b.onclick = () => { speed = Number(b.dataset.speed); document.querySelectorAll('[data-speed]').forEach((x) => x.classList.toggle('on', x === b)); }));
+function visible(e) { return e.k !== 'state' && ($('routine').checked || !isRoutine(e)); }
+function nextVisible(i) { for (let j = i + 1; j < N; j++) if (visible(E[j])) return j; return N - 1; }
+function prevVisible(i) { for (let j = i - 1; j >= 0; j--) if (visible(E[j])) return j; return 0; }
+document.addEventListener('keydown', (ev) => {
+  if (ev.target.tagName === 'INPUT') return;
+  if (ev.key === ' ') { ev.preventDefault(); $('play').click(); }
+  else if (ev.key === 'ArrowRight') $('fwd').click();
+  else if (ev.key === 'ArrowLeft') $('back').click();
+  else if (ev.key === 'Home') $('restart').click();
+  else if (ev.key === 'End') $('end').click();
+  else if (ev.key.toLowerCase() === 'f') $('nextFault').click();
+  else if (ev.key.toLowerCase() === 'c') $('nextCheck').click();
+});
+
+// scrubbing + hover tooltip
+let dragging = false;
+const tip = $('tip');
+cv.addEventListener('mousedown', (ev) => { dragging = true; setPlaying(false); seek(iOf(ev.offsetX)); });
+window.addEventListener('mouseup', () => (dragging = false));
+cv.addEventListener('mousemove', (ev) => {
+  const i = iOf(ev.offsetX);
+  if (dragging) seek(i);
+  // nearest meaningful event in the hovered lane
+  const l = Math.floor((ev.offsetY - TOP - DIVH - 8) / LANEH);
+  let best = null;
+  for (let d = 0; d < Math.max(4, N / 300) && !best; d++) for (const j of [i - d, i + d]) { const e = E[j]; if (e && lane(e) === l && (important(e) || $('routine').checked || !isRoutine(e))) { best = e; break; } }
+  hover = i; draw(cur, hover);
+  if (best) { tip.style.display = 'block'; tip.innerHTML = `${describe(best).join(' ')} <span style="opacity:.6">· ${clockOf(best.t)}</span>`; tip.style.left = Math.min(ev.clientX + 12, innerWidth - 430) + 'px'; tip.style.top = ev.clientY + 14 + 'px'; }
+  else if (l < 0) { tip.style.display = 'block'; tip.textContent = `${div[i]} field(s) out of sync at ${clockOf(E[i].t)}`; tip.style.left = ev.clientX + 12 + 'px'; tip.style.top = ev.clientY + 14 + 'px'; }
+  else tip.style.display = 'none';
+});
+cv.addEventListener('mouseleave', () => { hover = null; tip.style.display = 'none'; draw(cur, null); });
+window.addEventListener('resize', () => { layout(); draw(cur, hover); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { layout(); draw(cur, hover); });
+
+layout();
+// Deep link: replay.html#at=<event index> opens at that moment.
+const at = Number(new URLSearchParams(location.hash.slice(1)).get('at'));
+seek(Number.isFinite(at) && at > 0 ? at : 0);
+setPlaying(false);
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
